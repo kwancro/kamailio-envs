@@ -1,33 +1,35 @@
-resource "aws_vpc" "main" {
+resource "aws_vpc" "kamailio-build" {
   cidr_block           = var.main_cidr_block
   enable_dns_hostnames = true
   enable_dns_support   = true
 
   tags = {
-    Name        = "main-vpc"
+    Name        = "${var.vpc_name}-vpc"
     Environment = "global"
+    Build_id = "kama-build"
   }
 }
 
-resource "aws_internet_gateway" "main" {
-  vpc_id = aws_vpc.main.id
+resource "aws_internet_gateway" "kamailio-build" {
+  vpc_id = aws_vpc.kamailio-build.id
 
   tags = {
-    Name        = "main-igw"
+    Name        = "${var.vpc_name}-igw"
     Environment = "global"
   }
 }
 
 resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
+  vpc_id = aws_vpc.kamailio-build.id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.main.id
+    gateway_id = aws_internet_gateway.kamailio-build.id
   }
 
   tags = {
-    Name        = "main-public-rt"
+    Name        = "${var.vpc_name}-public-rt"
     Environment = "global"
+    Build_id    = "kama-build"
   }
 }

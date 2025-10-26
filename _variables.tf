@@ -1,3 +1,9 @@
+variable "vpc_name" {
+  type        = string
+  default     = "kamailio-build"
+  description = "The name of the VPC to use for the deployment"
+}
+
 variable "main_cidr_block" {
   type        = string
   default     = "172.31.0.0/16"

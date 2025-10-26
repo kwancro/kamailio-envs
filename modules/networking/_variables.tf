@@ -7,3 +7,9 @@ variable "cidr_block" {
   type        = string
   description = "CIDR block for the subnet"
 }
+
+variable "vpc_id" {
+  type        = string
+  default     = ""
+  description = "The VPC id"
+}
