@@ -1,4 +1,4 @@
-resource "aws_security_group" "development" {
+resource "aws_security_group" "production" {
   name_prefix = "${var.environment}-env-"
   vpc_id      = module.vpc.vpc_id
 
@@ -20,7 +20,7 @@ locals {
 ## Inbound traffic
 resource "aws_security_group_rule" "inbound_web_443" {
   type              = "ingress"
-  security_group_id = aws_security_group.development.id
+  security_group_id = aws_security_group.production.id
 
   from_port   = 443
   to_port     = 443
@@ -31,7 +31,7 @@ resource "aws_security_group_rule" "inbound_web_443" {
 
 resource "aws_security_group_rule" "inbound_web_80" {
   type              = "ingress"
-  security_group_id = aws_security_group.development.id
+  security_group_id = aws_security_group.production.id
 
   from_port   = 80
   to_port     = 80
@@ -42,7 +42,7 @@ resource "aws_security_group_rule" "inbound_web_80" {
 
 resource "aws_security_group_rule" "ssh_22" {
   type              = "ingress"
-  security_group_id = aws_security_group.development.id
+  security_group_id = aws_security_group.production.id
 
   from_port   = 22
   to_port     = 22
@@ -55,7 +55,7 @@ resource "aws_security_group_rule" "ssh_22" {
 
 resource "aws_security_group_rule" "outbound_allow_all" {
   type              = "egress"
-  security_group_id = aws_security_group.development.id
+  security_group_id = aws_security_group.production.id
 
   from_port   = 0
   to_port     = 0

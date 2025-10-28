@@ -13,3 +13,9 @@ variable "vpc_id" {
   default     = ""
   description = "The VPC id"
 }
+
+variable "route_table_id" {
+  type        = string
+  default     = ""
+  description = "The route table id"
+}

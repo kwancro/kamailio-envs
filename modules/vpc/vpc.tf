@@ -4,9 +4,9 @@ resource "aws_vpc" "kamailio-build" {
   enable_dns_support   = true
 
   tags = {
-    Name        = "${var.vpc_name}-vpc"
-    Environment = "global"
-    Build_id = "kama-build"
+    Name        = "${var.vpc_name}"
+    Environment = "${var.environment}"
+    Build_id    = "kama-build"
   }
 }
 
@@ -15,7 +15,7 @@ resource "aws_internet_gateway" "kamailio-build" {
 
   tags = {
     Name        = "${var.vpc_name}-igw"
-    Environment = "global"
+    Environment = "${var.environment}"
   }
 }
 
@@ -29,7 +29,7 @@ resource "aws_route_table" "public" {
 
   tags = {
     Name        = "${var.vpc_name}-public-rt"
-    Environment = "global"
+    Environment = "${var.environment}"
     Build_id    = "kama-build"
   }
 }

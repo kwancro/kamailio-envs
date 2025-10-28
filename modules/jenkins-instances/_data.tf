@@ -1,1 +1,0 @@
-# Data sources removed - using direct resource references instead

@@ -1,230 +1,463 @@
-# AWS Multi-Environment Infrastructure
+# Kamailio Environments Infrastructure
 
-This Terraform project creates a complete AWS infrastructure with separate development and production environments, each isolated in their own subnets within a shared VPC. The infrastructure includes security groups, Jenkins instances, and networking components following AWS best practices.
+This repository contains Terraform infrastructure-as-code for managing Kamailio build environments across multiple AWS environments (development and production). The infrastructure includes VPCs, subnets, security groups, EC2 instances (Jenkins), and persistent EBS storage with remote state management.
 
 ## Architecture Overview
 
-```
-                    ┌───────────────────────────────────────────────────────┐
-                    │                   AWS VPC                             │
-                    │                172.31.0.0/16                          │
-                    │                                                       │
-                    │  ┌─────────────────┐    ┌─────────────────┐           │
-                    │  │   Development   │    │   Production    │           │
-                    │  │   Environment   │    │   Environment   │           │
-                    │  │                 │    │                 │           │
-                    │  │ ┌─────────────┐ │    │ ┌─────────────┐ │           │
-                    │  │ │   Subnet    │ │    │ │   Subnet    │ │           │
-                    │  │ │172.31.20.0/ │ │    │ │172.31.10.0/ │ │           │
-                    │  │ │     24      │ │    │ │     24      │ │           │
-                    │  │ │             │ │    │ │             │ │           │
-                    │  │ │┌───────────┐│ │    │ │┌───────────┐│ │           │
-                    │  │ ││ Jenkins   ││ │    │ ││ Jenkins   ││ │           │
-                    │  │ ││ Instance  ││ │    │ ││ Instance  ││ │           │
-                    │  │ ││ t3.micro  ││ │    │ ││ t3.micro  ││ │           │
-                    │  │ │└───────────┘│ │    │ │└───────────┘│ │           │
-                    │  │ └─────────────┘ │    │ └─────────────┘ │           │
-                    │  └─────────────────┘    └─────────────────┘           │
-                    │                                                       │
-                    │  ┌─────────────────────────────────────────────────┐  │
-                    │  │              Security Groups                    │  │
-                    │  │  • SSH (22) from 0.0.0.0/0                      │  │
-                    │  │  • HTTP (80) from 0.0.0.0/0                     │  │
-                    │  │  • HTTPS (443) from 0.0.0.0/0                   │  │
-                    │  └─────────────────────────────────────────────────┘  │
-                    │                                                       │
-                    │  ┌─────────────────────────────────────────────────┐  │
-                    │  │              Internet Gateway                   │  │
-                    │  │          (Public Route Table)                   │  │
-                    │  └─────────────────────────────────────────────────┘  │
-                    └───────────────────────────────────────────────────────┘
-                                            │
-                                            ▼
-                                       Internet
+```text
+================================================================================
+                              AWS ACCOUNT
+                           Region: eu-west-1
+================================================================================
+
+[STEP 1] GLOBAL INFRASTRUCTURE (environments/global/) - DEPLOY FIRST!
+--------------------------------------------------------------------------------
+
+    +-----------------------------------------------------------------------+
+    | S3 Bucket: kamailio-build-env-state                                   |
+    |   |-- development/terraform.tfstate                                   |
+    |   +-- production/terraform.tfstate                                    |
+    +-----------------------------------------------------------------------+
+
+    +-----------------------------------------------------------------------+
+    | DynamoDB Table: kamailio-build-env-locks                              |
+    |   Purpose: State locking for concurrent Terraform operations          |
+    +-----------------------------------------------------------------------+
+
+
+[STEP 2] DEVELOPMENT ENVIRONMENT (environments/development/)
+--------------------------------------------------------------------------------
+
+    +-----------------------------------------------------------------------+
+    | VPC: kamailio-development-vpc                                         |
+    | CIDR: 172.10.0.0/16                                                   |
+    |                                                                       |
+    |   Availability Zone: eu-west-1b                                       |
+    |                                                                       |
+    |   +---------------------------------------------------------------+   |
+    |   | Subnet: 172.10.10.0/24                                        |   |
+    |   +---------------------------------------------------------------+   |
+    |                                                                       |
+    |   +---------------------------------------------------------------+   |
+    |   | Security Group: development-security-group                    |   |
+    |   | - Ingress: 80 (HTTP) from 0.0.0.0/0                           |   |
+    |   | - Ingress: 443 (HTTPS) from 0.0.0.0/0                         |   |
+    |   | - Egress: All traffic                                         |   |
+    |   +---------------------------------------------------------------+   |
+    |                                                                       |
+    |   +---------------------------------------------------------------+   |
+    |   | EC2 Instance: Jenkins-development-instance                    |   |
+    |   | - AMI: ami-0c9e5f4bbf9701d5d                                  |   |
+    |   | - Type: t1.micro                                              |   |
+    |   | - Docker: Auto-installed via user_data                        |   |
+    |   | - Test Container: traefik/whoami on port 80                   |   |
+    |   +---------------------------------------------------------------+   |
+    |                     |                                                 |
+    |                     | attached to /dev/sdf                            |
+    |                     v                                                 |
+    |   +---------------------------------------------------------------+   |
+    |   | EBS Volume: development-package_volume                        |   |
+    |   | - Size: 15 GB                                                 |   |
+    |   | - Device: /dev/sdf                                            |   |
+    |   | - Mount Point: /mnt/pkg (configurable)                        |   |
+    |   | - Lifecycle: prevent_destroy = true                           |   |
+    |   +---------------------------------------------------------------+   |
+    |                                                                       |
+    +-----------------------------------------------------------------------+
+
+
+[STEP 3] PRODUCTION ENVIRONMENT (environments/production/)
+--------------------------------------------------------------------------------
+
+    +-----------------------------------------------------------------------+
+    | VPC: kamailio-production-vpc                                          |
+    | CIDR: 172.20.0.0/16                                                   |
+    |                                                                       |
+    |   Availability Zone: eu-west-1b                                       |
+    |                                                                       |
+    |   +---------------------------------------------------------------+   |
+    |   | Subnet: 172.20.20.0/24                                        |   |
+    |   +---------------------------------------------------------------+   |
+    |                                                                       |
+    |   +---------------------------------------------------------------+   |
+    |   | Security Group: production-security-group                     |   |
+    |   | - Ingress: 80 (HTTP) from 0.0.0.0/0                           |   |
+    |   | - Ingress: 443 (HTTPS) from 0.0.0.0/0                         |   |
+    |   | - Egress: All traffic                                         |   |
+    |   +---------------------------------------------------------------+   |
+    |                                                                       |
+    |   +---------------------------------------------------------------+   |
+    |   | EC2 Instance: Jenkins-production-instance                     |   |
+    |   | - AMI: ami-0c9e5f4bbf9701d5d                                  |   |
+    |   | - Type: t1.micro                                              |   |
+    |   | - Docker: Auto-installed via user_data                        |   |
+    |   | - Test Container: traefik/whoami on port 80                   |   |
+    |   +---------------------------------------------------------------+   |
+    |                     |                                                 |
+    |                     | attached to /dev/sdf                            |
+    |                     v                                                 |
+    |   +---------------------------------------------------------------+   |
+    |   | EBS Volume: production-package_volume                         |   |
+    |   | - Size: 15 GB                                                 |   |
+    |   | - Device: /dev/sdf                                            |   |
+    |   | - Mount Point: /mnt/pkg (configurable)                        |   |
+    |   | - Lifecycle: prevent_destroy = true                           |   |
+    |   +---------------------------------------------------------------+   |
+    |                                                                       |
+    +-----------------------------------------------------------------------+
+
+================================================================================
 ```
 
-## Network Segregation
+### Deployment Order
 
-The infrastructure provides complete network segregation between environments:
+1. **Global** (`environments/global/`) - Creates S3 + DynamoDB for state storage
+2. **Development** (`environments/development/`) - Creates dedicated VPC and dev infrastructure
+3. **Production** (`environments/production/`) - Creates dedicated VPC and prod infrastructure
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      VPC: 172.31.0.0/16                     │
-│                                                             │
-│  Development Environment        Production Environment      │
-│  ┌─────────────────────────┐    ┌─────────────────────────┐ │
-│  │                         │    │                         │ │
-│  │  Subnet: 172.31.20.0/24 │    │  Subnet: 172.31.10.0/24 │ │
-│  │  ┌─────────────────────┐│    │  ┌─────────────────────┐│ │
-│  │  │ Available IPs:      ││    │  │ Available IPs:      ││ │
-│  │  │ 172.31.20.4 -       ││    │  │ 172.31.10.4 -       ││ │
-│  │  │ 172.31.20.254       ││    │  │ 172.31.10.254       ││ │
-│  │  │                     ││    │  │                     ││ │
-│  │  │ Jenkins Instance:   ││    │  │ Jenkins Instance:   ││ │
-│  │  │ - Private IP: Auto  ││    │  │ - Private IP: Auto  ││ │
-│  │  │ - Public IP: Auto   ││    │  │ - Public IP: Auto   ││ │
-│  │  │ - SSH Key: aws_ie-1 ││    │  │ - SSH Key: aws_ie-1 ││ │
-│  │  └─────────────────────┘│    │  └─────────────────────┘│ │
-│  └─────────────────────────┘    └─────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-```
+### Key Architecture Points
 
-## Module Structure
-
-The project is organized into reusable Terraform modules:
-
-```
-.
-├── main.tf                     # Root configuration and module calls
-├── _variables.tf               # Global variable definitions
-├── _providers.tf               # AWS provider configuration
-├── _outputs.tf                 # Root-level outputs
-├── _data.tf                    # Global data sources
-└── modules/
-    ├── vpc/                    # VPC, IGW, and route table
-    │   ├── vpc.tf
-    │   └── _variables.tf
-    ├── security/               # Security groups
-    │   ├── security-groups.tf
-    │   └── _variables.tf
-    ├── networking/             # Subnets and route associations
-    │   ├── networking.tf
-    │   ├── _variables.tf
-    │   └── _data.tf
-    └── jenkins-instances/      # EC2 instances
-        ├── jenkins.tf
-        ├── _variables.tf
-        └── _output.tf
-```
+- **Separate VPCs**: Each environment has its own isolated VPC with dedicated CIDR blocks
+  - Development: 172.10.0.0/16
+  - Production: 172.20.0.0/16
+- **Network Isolation**: Development and production are completely isolated from each other by default
+- **Consistent Configuration**: Both environments follow the same structure but with different values
+- **No Inter-VPC Communication**: The VPCs are not peered. If cross-environment communication is needed in the future, VPC peering or Transit Gateway can be configured
 
 ## Features
 
-- ✅ **Multi-Environment Support**: Separate dev and prod environments
-- ✅ **Network Isolation**: Each environment in its own subnet
-- ✅ **Modular Design**: Reusable Terraform modules
-- ✅ **Security Groups**: Configured for SSH, HTTP, and HTTPS access
-- ✅ **Auto-Scaling Ready**: Infrastructure prepared for scaling
-- ✅ **Cost-Optimized**: Uses t3.micro instances by default
-- ✅ **Customizable**: All parameters configurable via variables
+### Remote State Management
 
-## Customizable Parameters
+- **S3 Backend**: Terraform state files stored remotely in S3 bucket with versioning enabled
+- **State Locking**: DynamoDB table prevents concurrent state modifications
+- **Encryption**: State files encrypted at rest (AES256)
+- **Versioning**: S3 bucket versioning enabled for state recovery
+- **Security**: Public access blocked on S3 bucket
 
-Edit `_variables.tf` to customize the infrastructure for your needs:
+### Network Infrastructure
 
-### Network Configuration
-```hcl
-variable "main_cidr_block" {
-  default = "172.31.0.0/16"    # Main VPC CIDR block
-}
+- **Separate VPCs**: Each environment has its own dedicated VPC for complete isolation
+  - Development VPC: 172.10.0.0/16
+  - Production VPC: 172.20.0.0/16
+- **Subnets**: Dedicated subnets per environment with custom CIDR blocks
+  - Development Subnet: 172.10.10.0/24
+  - Production Subnet: 172.20.20.0/24
+- **Security Groups**: Environment-specific security groups with granular rules
+  - HTTP (80) and HTTPS (443) ingress from anywhere (0.0.0.0/0)
+  - All egress traffic allowed
 
-variable "environment" {
-  default = {
-    development = {
-      cidr_block    = "172.31.20.0/24"        # Dev subnet CIDR
-      ami           = "ami-0c9e5f4bbf9701d5d" # AMI ID
-      instance_type = "t3.micro"              # Instance size
+### Compute Resources
+
+- **EC2 Instances**: Jenkins build servers with configurable instance types
+- **Auto-configuration**: User data script installs Docker and test containers
+- **SSH Access**: Key-based authentication with configurable key names
+
+### Storage
+
+- **EBS Volumes**: Persistent 15GB storage volumes for build artifacts and packages
+- **Auto-attach**: Volumes automatically attached to EC2 instances at `/dev/sdf`
+- **Lifecycle Protection**: `prevent_destroy` enabled to protect data from accidental deletion
+- **Availability Zone Aware**: Volumes and instances deployed in same AZ (eu-west-1b)
+
+### Environment Isolation
+
+- **Separate VPCs**: Complete network isolation between development and production
+- **Availability Zones**: Resources deployed in `eu-west-1b` (configurable)
+- **Independent Infrastructure**: Each environment can be managed, updated, and destroyed independently
+
+## Directory Structure
+
+```text
+.
+├── environments/
+│   ├── global/              # Remote state infrastructure (S3 + DynamoDB)
+│   ├── development/         # Development environment
+│   └── production/          # Production environment
+└── modules/
+    ├── networking/          # Subnet and networking module
+    └── vpc/                 # VPC module
+```
+
+## Prerequisites
+
+### AWS Credentials
+
+Configure AWS credentials using one of these methods:
+
+- Use AWS environment variables
+- Use AWS CLI profile
+
+### Terraform
+
+- Terraform v1.5+ installed
+- AWS Provider v6.0+
+
+### Required IAM Permissions
+
+The Terraform user/role requires the following IAM permissions to deploy this infrastructure:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:*",
+        "s3:*",
+        "dynamodb:*"
+      ],
+      "Resource": "*"
     }
-    production = {
-      cidr_block    = "172.31.10.0/24"        # Prod subnet CIDR
-      ami           = "ami-0c9e5f4bbf9701d5d" # AMI ID
-      instance_type = "t3.micro"              # Instance size
-    }
-  }
+  ]
 }
 ```
 
-### Security Configuration
-```hcl
-variable "ssh-allowed-inbound-subnets" {
-  default = ["0.0.0.0/0"]    # SSH access (restrict for production)
-}
+**Detailed Permissions by Service:**
 
-variable "https-allowed-inbound-subnets" {
-  default = ["0.0.0.0/0"]    # HTTPS/HTTP access
-}
+#### EC2 (Compute & Networking)
 
-variable "initial_ssh_key_name" {
-  default = "aws_ie-1"       # Your AWS key pair name
-}
-```
+- `ec2:CreateVpc`, `ec2:DeleteVpc`, `ec2:DescribeVpcs`, `ec2:ModifyVpcAttribute`
+- `ec2:CreateSubnet`, `ec2:DeleteSubnet`, `ec2:DescribeSubnets`
+- `ec2:CreateSecurityGroup`, `ec2:DeleteSecurityGroup`, `ec2:DescribeSecurityGroups`
+- `ec2:AuthorizeSecurityGroupIngress`, `ec2:AuthorizeSecurityGroupEgress`
+- `ec2:RevokeSecurityGroupIngress`, `ec2:RevokeSecurityGroupEgress`
+- `ec2:RunInstances`, `ec2:TerminateInstances`, `ec2:DescribeInstances`
+- `ec2:CreateVolume`, `ec2:DeleteVolume`, `ec2:DescribeVolumes`
+- `ec2:AttachVolume`, `ec2:DetachVolume`
+- `ec2:CreateTags`, `ec2:DescribeTags`
+- `ec2:DescribeAvailabilityZones`
+- `ec2:CreateRouteTable`, `ec2:DeleteRouteTable`, `ec2:DescribeRouteTables`
+- `ec2:AssociateRouteTable`, `ec2:DisassociateRouteTable`
+- `ec2:CreateRoute`, `ec2:DeleteRoute`
+- `ec2:CreateInternetGateway`, `ec2:DeleteInternetGateway`, `ec2:DescribeInternetGateways`
+- `ec2:AttachInternetGateway`, `ec2:DetachInternetGateway`
 
-### AWS Configuration
-Update `_providers.tf` to set your region and credentials:
-```hcl
-provider "aws" {
-  region                   = "eu-west-1"      # Your AWS region
-  shared_credentials_files = ["./_config"]    # Path to credentials
-}
-```
+#### S3 (State Storage)
+
+- `s3:CreateBucket`, `s3:DeleteBucket`, `s3:ListBucket`
+- `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`
+- `s3:GetBucketVersioning`, `s3:PutBucketVersioning`
+- `s3:GetEncryptionConfiguration`, `s3:PutEncryptionConfiguration`
+- `s3:GetBucketPublicAccessBlock`, `s3:PutBucketPublicAccessBlock`
+- `s3:GetBucketTagging`, `s3:PutBucketTagging`
+
+#### DynamoDB (State Locking)
+
+- `dynamodb:CreateTable`, `dynamodb:DeleteTable`, `dynamodb:DescribeTable`
+- `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:DeleteItem`
+- `dynamodb:DescribeTimeToLive`, `dynamodb:TagResource`
+
+#### STS (Account Information)
+
+- `sts:GetCallerIdentity`
+
+**Recommended Managed Policies:**
+
+For simplicity in non-production scenarios, you can use these AWS managed policies:
+
+- `AmazonEC2FullAccess`
+- `AmazonS3FullAccess`
+- `AmazonDynamoDBFullAccess`
+
+**Production Best Practice:**
+
+Create a custom IAM policy with least-privilege permissions scoped to specific resources using tags and resource ARNs.
 
 ## Deployment Instructions
 
-1. **Prerequisites**:
-   - Terraform >= 1.0
-   - AWS CLI configured or credentials file
-   - AWS key pair created (update `initial_ssh_key_name`)
+### ⚠️ IMPORTANT: Deploy Global Infrastructure First
 
-2. **Deploy**:
-   ```bash
-   terraform init
-   terraform plan
-   terraform apply
-   ```
+The global infrastructure **must** be deployed before any environment, as it creates the S3 bucket and DynamoDB table used for remote state storage.
 
-3. **Get Outputs**:
-   ```bash
-   terraform output
-   ```
+### Step 1: Deploy Global Infrastructure
 
-4. **Access Instances**:
-   ```bash
-   ssh -i ~/.ssh/your-key.pem admin@<public-ip>
-   ```
-
-## Infrastructure Components
-
-| Component | Description | Module |
-|-----------|-------------|--------|
-| **VPC** | Main virtual network (172.31.0.0/16) | `modules/vpc` |
-| **Internet Gateway** | Public internet access | `modules/vpc` |
-| **Route Table** | Routes traffic to internet | `modules/vpc` |
-| **Security Group** | Firewall rules (SSH, HTTP, HTTPS) | `modules/security` |
-| **Dev Subnet** | Development network (172.31.20.0/24) | `modules/networking` |
-| **Prod Subnet** | Production network (172.31.10.0/24) | `modules/networking` |
-| **Jenkins Instances** | EC2 instances with Docker/Jenkins | `modules/jenkins-instances` |
-
-## Security Considerations
-
-⚠️ **Important Security Notes**:
-- Default configuration allows SSH/HTTP/HTTPS from anywhere (0.0.0.0/0)
-- For production, restrict `ssh-allowed-inbound-subnets` to your IP ranges
-- Consider using a bastion host for SSH access
-- Implement IAM roles instead of long-term access keys
-- Enable VPC Flow Logs for network monitoring
-
-## Outputs
-
-The infrastructure provides these outputs:
-- `jenkins_instance_public_ips`: Public IP addresses for all environments
-- Instance access details for SSH connections
-
-## Cost Estimation
-
-With default settings (2 x t3.micro instances):
-- **Estimated monthly cost**: ~$15-20 USD
-- **Components**: EC2 instances, data transfer, storage
-- **Optimization**: Use Reserved Instances for long-term deployments
-
-## Cleanup
-
-To destroy all resources:
 ```bash
+cd environments/global
+terraform init
+terraform plan
+terraform apply
+```
+
+**Note the outputs:**
+
+```bash
+terraform output
+# Outputs:
+# - s3_bucket_name
+# - dynamodb_table_name
+```
+
+### Step 2: Deploy Development Environment
+
+```bash
+cd ../development
+terraform init
+terraform plan
+terraform apply
+```
+
+### Step 3: Deploy Production Environment
+
+```bash
+cd ../production
+terraform init
+terraform plan
+terraform apply
+```
+
+## Availability Zones
+
+All resources are deployed in **eu-west-1b** (the second availability zone in eu-west-1). This is configured using:
+
+```hcl
+availability_zone = data.aws_availability_zones.available.names[1]
+```
+
+**Why Availability Zone Matters:**
+
+- EBS volumes are AZ-specific and can only attach to instances in the same AZ
+- Both the EC2 instance and EBS volume must be in the same AZ
+- Using `data.aws_availability_zones.available.names[1]` ensures consistency
+
+**To change the availability zone:**
+
+Edit the index value in `ebs-storage.tf` and `ec2-jenkins.tf`:
+
+- `names[0]` = First AZ (eu-west-1a)
+- `names[1]` = Second AZ (eu-west-1b)
+- `names[2]` = Third AZ (eu-west-1c)
+
+## Storage Protection
+
+### EBS Volume Protection
+
+EBS volumes have **lifecycle protection** enabled to prevent accidental deletion:
+
+```hcl
+lifecycle {
+  prevent_destroy = true
+}
+```
+
+This is defined in:
+
+- `environments/development/ebs-storage.tf` (line 10-12)
+- `environments/production/ebs-storage.tf` (line 10-12)
+
+### ⚠️ Removing Storage (If Needed)
+
+If you need to destroy the EBS volumes, you must **comment out or remove** the lifecycle block:
+
+**File:** `environments/{environment}/ebs-storage.tf`
+
+```hcl
+resource "aws_ebs_volume" "package_volume" {
+  availability_zone = data.aws_availability_zones.available.names[1]
+  size              = var.packages_disk_volume
+
+  tags = {
+    Name        = "${var.environment}-package_volume"
+    Environment = "${var.environment}"
+  }
+
+  # COMMENT OUT THESE LINES TO ALLOW DELETION:
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
+}
+```
+
+**Then run:**
+
+```bash
+terraform apply  # First apply the lifecycle change
 terraform destroy
 ```
 
-## Contributing
+**⚠️ WARNING:** This will permanently delete the EBS volume and all data stored on it. Ensure you have backups before proceeding.
 
-1. Test changes in development environment first
-2. Follow Terraform best practices
-3. Update this README for any architectural changes
-4. Ensure all modules have proper variable validation
+## Configuration Variables
+
+Each environment can be customized via `_variables.tf`:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `region` | AWS region | `eu-west-1` |
+| `availability_zone` | Availability zone for EBS volume | `eu-west-1b` |
+| `environment` | Environment name | `development` / `production` |
+| `vpc_name` | VPC name | `kamailio-development-vpc` / `kamailio-production-vpc` |
+| `main_cidr_block` | VPC network range | `172.10.0.0/16` (dev) / `172.20.0.0/16` (prod) |
+| `cidr_block` | Subnet CIDR block | `172.10.10.0/24` (dev) / `172.20.20.0/24` (prod) |
+| `packages_disk_volume` | EBS volume size in GB | `15` |
+| `ami` | AMI ID for EC2 instance | `ami-0c9e5f4bbf9701d5d` |
+| `instance_type` | EC2 instance type | `t1.micro` |
+| `initial_ssh_key_name` | SSH key pair name | `aws_ie-1` |
+
+## Outputs
+
+After deployment, each environment outputs:
+
+- `jenkins_instance_public_ip` - Public IP of Jenkins instance
+- `jenkins_instance_private_ip` - Private IP of Jenkins instance
+- `package_volume_id` - EBS volume ID
+
+## State File Security
+
+- State files are stored in S3 with encryption enabled
+- DynamoDB table prevents concurrent modifications
+- `.gitignore` excludes local state files and credentials
+
+## Troubleshooting
+
+### EBS Volume Not Visible
+
+If the EBS volume isn't visible at `/dev/sdf`, check for:
+
+- `/dev/xvdf` (most modern instances)
+- `/dev/nvme1n1` (Nitro-based instances like t3, m5, c5)
+
+Use `lsblk` to list all block devices.
+
+### State Locking Errors
+
+Ensure the DynamoDB table exists and matches the name in your backend configuration:
+
+```bash
+terraform output -state=../global/terraform.tfstate dynamodb_table_name
+```
+
+### Availability Zone Errors
+
+Ensure both EBS volume and EC2 instance use the same availability zone configuration.
+
+## Maintenance
+
+### Updating Infrastructure
+
+```bash
+terraform plan    # Review changes
+terraform apply   # Apply changes
+```
+
+### Destroying Infrastructure
+
+```bash
+# Remove lifecycle protection from EBS volumes first (see Storage Protection section)
+terraform destroy
+```
+
+### State Management
+
+```bash
+terraform state list                    # List resources
+terraform state show <resource>         # Show resource details
+terraform refresh                       # Sync state with real infrastructure
+```
+
+## License
+
+
+## Contributors
+
+kwancro@gmail.com

@@ -4,6 +4,13 @@ variable "region" {
   description = "AWS region to use"
 }
 
+## Specifying the availability zone to use for storage
+variable "availability_zone" {
+  type        = string
+  default     = "eu-west-1b"
+  description = "Availability zone for EBS volume"
+}
+
 
 variable "environment" {
   type        = string
@@ -11,34 +18,34 @@ variable "environment" {
   description = "Envirnoment name"
 }
 
-# variable "ssh-allowed-inbound-subnets" {
-#   type        = list(any)
-#   default     = ["0.0.0.0/0"]
-#   description = "List of allowed inbound IPs"
-# }
+## VPC details
+variable "vpc_name" {
+  type        = string
+  default     = "kamailio-development-vpc"
+  description = "The name of the VPC to use for the deployment"
+}
 
-# variable "https-allowed-inbound-subnets" {
-#   type        = list(any)
-#   default     = ["0.0.0.0/0"]
-#   description = "List of allowed inbound IPs"
-# }
+variable "main_cidr_block" {
+  type        = string
+  default     = "172.10.0.0/16"
+  description = "VPC Network range"
+}
 
-# Subnet
+## Subnet
 variable "cidr_block" {
   type        = string
-  default     = "172.31.20.0/24"
+  default     = "172.10.10.0/24"
   description = "Envirnoment IP block range"
 }
 
-# Storage/Volume
+## Storage/Volume
 variable "packages_disk_volume" {
   type        = number
-  default     = 100
+  default     = 15
   description = "Disk volume size in GB to store packages"
 }
 
-
-# VM details
+## VM details
 variable "ami" {
   type        = string
   default     = "ami-0c9e5f4bbf9701d5d"
@@ -50,69 +57,9 @@ variable "instance_type" {
   description = "Envirnoment instance type"
 }
 
-# Access keys
+## Access keys
 variable "initial_ssh_key_name" {
   type        = string
   default     = "aws_ie-1"
   description = "Initial ssh key name to be used to access the instances"
 }
-
-# Firewall rules
-
-variable "inbound_traffic" {
-  type        = bool
-  default     = false
-  description = "Flag to build inbound traffic"
-}
-
-variable "outbound_traffic" {
-  type        = bool
-  default     = false
-  description = "Flag to build outbound traffic"
-}
-
-variable "inbound_allowed_traffic" {
-  type = map(object({
-    # description = string
-    from_port   = number
-    to_port     = number
-    protocol    = string
-    cidr_blocks = list(string)
-  }))
-  default = {
-    ssh = {
-      #   description = string
-      from_port   = 22
-      to_port     = 22
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
-    https = {
-      #   description = string
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
-  }
-}
-
-variable "outbound_allowed_traffic" {
-  type = map(object({
-    # description = string
-    from_port   = number
-    to_port     = number
-    protocol    = string
-    cidr_blocks = list(string)
-  }))
-  default = {
-    all = {
-      #   description = string
-      from_port   = 0
-      to_port     = 0
-      protocol    = "-1"
-      cidr_blocks = ["0.0.0.0/0"]
-    }
-  }
-}
-
